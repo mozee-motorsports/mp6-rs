@@ -1,0 +1,17 @@
+- `reference_manual`: the big kahuna
+    - in depth guide on every single thing
+    - 3000+ pages
+    - FDCAN stuff starts on p2502
+- `hal_manual.pdf`: STM32H7 Hardware Abstraction Layer (HAL) reference
+    - Hardware API
+- `programming_manual.pdf`: M7 specific documentation. 
+    - Information about the NVIC
+    - Information about the SysTick timer
+    - Info about the FPU
+- `user_manual.pdf`: STM32H723ZE specific documentation
+    - Functional Overview
+    - Memory Mapping
+    - Pinouts and alternate functions (p72)
+    - Electrical characteristics for MCU
+- `144_manual.pdf`: Nucleo-144 specific documentation
+    - Electrical Characteristics for 144 board
