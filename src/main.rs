@@ -43,12 +43,12 @@ async fn pwm_out(mut pwm: SimplePwm<'static, TIM3>) {
     pwm.enable(Channel::Ch1);
 
     let min_pos: u16 = max/10;
-    let max_pos: u16 = max/20;
+    let max_pos: u16 = max/4;
     loop {
         // waits for a signal on the PWM_DUTY_CYCLE mutex
         let throttle = (PWM_DUTY_CYCLE.wait().await as f32)/3.3; // 0 to 1
         let duty_cycle = (throttle * max_pos as f32) as u16;
-        //info!("setting duty cycle to {}", duty_cycle);
+        info!("setting duty cycle to {}", duty_cycle);
         pwm.set_duty(Channel::Ch1, duty_cycle);
     }
 }
@@ -114,6 +114,7 @@ async fn main(spawner: Spawner) {
         /* Read potentiometers */
         let pot1 = adc3.read(&mut p.PC0) as f32;
         let pot1_v = (pot1/4095.0)*3.3;   // ADC3 is 12-bit
+        info!("pot1: {}V", pot1_v);
 
         // let pot2 = adc2.read(&mut p.PC3) as f32;
         // let pot2_v = (pot2/65535.0)*3.3;  // ADC2 is 16-bit
@@ -129,6 +130,8 @@ async fn main(spawner: Spawner) {
         //info!("\npot1: {} V\npot2: {}V\navg: {}V", pot1_v, pot2_v, avg);
 
         //PWM_DUTY_CYCLE.signal(avg);
+
+        /* signal the pwm task */
         PWM_DUTY_CYCLE.signal(pot1_v);
         Timer::after(Duration::from_millis(100)).await;
     }
