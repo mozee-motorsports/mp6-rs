@@ -13,7 +13,7 @@ use {defmt_rtt as _, panic_probe as _};
 
 use embassy_executor::Spawner;
 use embassy_stm32::{
-    adc::{Adc, SampleTime}, gpio::{AnyPin, Level, Output, OutputType, Speed}, peripherals::TIM3, time::{hz, khz}, timer::{simple_pwm::{PwmPin, SimplePwm}, Channel}
+    adc::{Adc, SampleTime}, gpio::{AnyPin, Level, Output, OutputType, Speed}, peripherals::{TIM15, TIM3}, time::{hz, khz}, timer::{simple_pwm::{PwmPin, SimplePwm}, Channel}
 };
 use embassy_time::{Delay, Duration, Timer};
 use fmt::info;
@@ -36,7 +36,7 @@ async fn blink(led_pin: AnyPin) {
 }
 
 #[embassy_executor::task]
-async fn pwm_out(mut pwm: SimplePwm<'static, TIM3>) {
+async fn pwm_out(mut pwm: SimplePwm<'static, TIM15>) {
     pwm.set_frequency(hz(50));
     let max = pwm.get_max_duty();
     pwm.enable(Channel::Ch1);
@@ -93,17 +93,13 @@ async fn main(spawner: Spawner) {
     let mut p = embassy_stm32::init(config);
 
 
-    let ch1 = PwmPin::new_ch1(p.PA6, OutputType::PushPull);
-    let mut pwm = SimplePwm::new(p.TIM3, Some(ch1), None, None, None, khz(10), Default::default());
+    let ch1 = PwmPin::new_ch1(p.PA2, OutputType::PushPull);
+    let mut pwm = SimplePwm::new(p.TIM15, Some(ch1), None, None, None, khz(10), Default::default());
 
 
-    let mut adc2 = Adc::new(p.ADC2, &mut Delay);
-    adc2.set_sample_time(SampleTime::Cycles32_5);
-    let mut adc2_vrefint_channel = adc2.enable_vrefint();
-
-    let mut adc3 = Adc::new(p.ADC3, &mut Delay);
-    adc3.set_sample_time(SampleTime::Cycles32_5);
-    let mut adc3_vrefint_channel = adc3.enable_vrefint();
+    let mut adc1 = Adc::new(p.ADC1, &mut Delay);
+    adc1.set_sample_time(SampleTime::Cycles32_5);
+    let mut adc1_vrefint_channel = adc1.enable_vrefint();
 
     /* Tasks */
     spawner.spawn(pwm_out(pwm)).unwrap();
@@ -112,11 +108,11 @@ async fn main(spawner: Spawner) {
     loop {
 
         /* Read potentiometers */
-        let pot1 = adc3.read(&mut p.PC0) as f32;
-        let pot1_v = (pot1/4095.0)*3.3;   // ADC3 is 12-bit
+        let pot1 = adc1.read(&mut p.PF11) as f32;
+        let pot1_v = (pot1/65535.0)*3.3;   // ADC1 is 16-bit
         info!("pot1: {}V", pot1_v);
 
-        // let pot2 = adc2.read(&mut p.PC3) as f32;
+        // let pot2 = adc2.read(&mut p.PA0) as f32;
         // let pot2_v = (pot2/65535.0)*3.3;  // ADC2 is 16-bit
         // let avg = (pot1_v+pot2_v)/2.0;
 
