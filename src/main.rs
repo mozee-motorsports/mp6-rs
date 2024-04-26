@@ -13,7 +13,7 @@ use {defmt_rtt as _, panic_probe as _};
 
 use embassy_executor::Spawner;
 use embassy_stm32::{
-    adc::{Adc, SampleTime}, gpio::{AnyPin, Level, Output, OutputType, Speed}, peripherals::{TIM15, TIM3}, time::{hz, khz}, timer::{simple_pwm::{PwmPin, SimplePwm}, Channel}
+    adc::{Adc, SampleTime}, gpio::{AnyPin, Level, Output, OutputType, Speed}, peripherals::{TIM3}, time::{hz, khz}, timer::{simple_pwm::{PwmPin, SimplePwm}, Channel}
 };
 use embassy_time::{Delay, Duration, Timer};
 use fmt::info;
@@ -36,18 +36,18 @@ async fn blink(led_pin: AnyPin) {
 }
 
 #[embassy_executor::task]
-async fn pwm_out(mut pwm: SimplePwm<'static, TIM15>) {
+async fn pwm_out(mut pwm: SimplePwm<'static, TIM3>) {
     pwm.set_frequency(hz(50));
     let max = pwm.get_max_duty();
     pwm.enable(Channel::Ch1);
     pwm.enable(Channel::Ch1);
 
-    let min_pos: u16 = max/10;
-    let max_pos: u16 = max/4;
+    let min_pos: f32 = 100.0;
+    let max_pos: f32 = 6000.0;
     loop {
         // waits for a signal on the PWM_DUTY_CYCLE mutex
         let throttle = (PWM_DUTY_CYCLE.wait().await as f32)/3.3; // 0 to 1
-        let duty_cycle = (throttle * max_pos as f32) as u16;
+        let duty_cycle = (min_pos + (throttle * max_pos) as f32) as u16;
         info!("setting duty cycle to {}", duty_cycle);
         pwm.set_duty(Channel::Ch1, duty_cycle);
     }
@@ -93,8 +93,8 @@ async fn main(spawner: Spawner) {
     let mut p = embassy_stm32::init(config);
 
 
-    let ch1 = PwmPin::new_ch1(p.PA2, OutputType::PushPull);
-    let mut pwm = SimplePwm::new(p.TIM15, Some(ch1), None, None, None, khz(10), Default::default());
+    let ch1 = PwmPin::new_ch1(p.PA6, OutputType::PushPull);
+    let mut pwm = SimplePwm::new(p.TIM3, Some(ch1), None, None, None, khz(10), Default::default());
 
 
     let mut adc1 = Adc::new(p.ADC1, &mut Delay);
