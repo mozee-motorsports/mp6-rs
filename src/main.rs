@@ -3,6 +3,7 @@
 
 mod fmt;
 
+use cortex_m::prelude::_embedded_hal_blocking_delay_DelayMs;
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, signal::Signal};
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
@@ -13,7 +14,7 @@ use {defmt_rtt as _, panic_probe as _};
 use embassy_executor::Spawner;
 use embassy_stm32::{
     adc::{Adc, SampleTime},
-    gpio::{AnyPin, Level, Output, OutputType, Speed},
+    gpio::{AnyPin, Input, Level, Output, OutputType, Speed},
     peripherals::TIM3,
     time::{hz, khz},
     timer::{simple_pwm::{PwmPin, SimplePwm}, Channel}
@@ -67,6 +68,14 @@ async fn pwm_out(mut pwm: SimplePwm<'static, TIM3>)
     }
 }
 
+/// Blocking: play the speaker tone
+async fn armed_tone(pin: AnyPin) {
+    let mut speaker = Output::new(pin, Level::Low, Speed::Low);
+    speaker.set_high();
+    Timer::after(Duration::from_millis(2000)).await;
+    speaker.set_low();
+}
+
 /******************************************************************************
  * Main
  *****************************************************************************/
@@ -110,6 +119,21 @@ async fn main(spawner: Spawner)
     /* Peripheral Configuration */
     let mut p = embassy_stm32::init(config);
 
+    /* Armed: 12V -> 3.3V via relay */
+    let armed_pin = Input::new(p.PC6, embassy_stm32::gpio::Pull::Down);
+    loop {
+        match armed_pin.get_level() {
+            Level::High => {
+                info!("We see high");
+                armed_tone(p.PF0.into()).await;
+                info!("Going low");
+                break;
+            },
+            Level::Low => continue,
+        }
+    }
+
+
     let ch1 = PwmPin::new_ch1(p.PA6, OutputType::PushPull);
     let pwm = SimplePwm::new(p.TIM3, Some(ch1), None, None, None, khz(10), Default::default());
 
@@ -128,7 +152,7 @@ async fn main(spawner: Spawner)
         let pot1 = adc1.read(&mut p.PF11) as f32;
         let pot1_v = (pot1/65535.0)*3.3;   // ADC1 is 16-bit
         let pot1_per = pot1_v/3.3;
-        info!("pot1: {} or {}V or {}%\n", pot1, pot1_v, pot1_per);
+        //info!("pot1: {} or {}V or {}%\n", pot1, pot1_v, pot1_per);
 
         let pot2 = adc1.read(&mut p.PA0) as f32;
         let pot2_v = (pot2/65535.0)*3.3;  // ADC2 is 16-bit
@@ -137,22 +161,17 @@ async fn main(spawner: Spawner)
 
         let avg = (pot1_per+pot2_per)/2.0;
 
-        if percent_difference(pot1_per, pot2_per) > 0.10
-        {
+        if percent_difference(pot1_per, pot2_per) > 0.10 {
         /* this is an invalid state: report error and close throttle? */
+            //info!("Error state!")
 
         } 
-        else 
-        {
+        else {
+            PWM_DUTY_CYCLE.signal(avg);
+         //   info!("\npot1: {}%\npot2: {}%\navg: {}%", pot1_per, pot2_per, avg);
              /* valid state, set throttle? */
         }
 
-        info!("\npot1: {}%\npot2: {}%\navg: {}%", pot1_per, pot2_per, avg);
-
-        PWM_DUTY_CYCLE.signal(avg);
-
-        /* signal the pwm task */
-        // PWM_DUTY_CYCLE.signal(pot1_v);
         Timer::after(Duration::from_millis(100)).await;
     }
 }
