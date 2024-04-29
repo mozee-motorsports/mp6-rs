@@ -117,22 +117,21 @@ async fn main(spawner: Spawner) {
     let mut p = embassy_stm32::init(config);
 
     /* Armed: 12V -> 3.3V via relay */
-    let ssok = Input::new(p.PA14, embassy_stm32::gpio::Pull::Down);
-    let r2d = Input::new(p.PA15, embassy_stm32::gpio::Pull::Down);
+    let ssok = Input::new(p.PA3, embassy_stm32::gpio::Pull::Down);
+    let r2d = Input::new(p.PA8, embassy_stm32::gpio::Pull::Down);
+    Timer::after(Duration::from_millis(100)).await;
     
 
 
     let mut ssok_on = false;
-    loop {
-        info!("SSOK level: {:?}", ssok.get_level());
-        info!("R2D level: {:?}", r2d.get_level());
-        // match ssok.get_level() {
-        //     Level::High => {
-        //         info!("ssok!");
-        //         ssok_on = true
-        //     },
-        //     Level::Low => Timer::after(Duration::from_millis(100)).await,
-        // }
+    while !ssok_on {
+        match ssok.get_level() {
+            Level::High => {
+                info!("ssok!");
+                ssok_on = true
+            },
+            Level::Low => Timer::after(Duration::from_millis(100)).await,
+        }
     }
     
     let mut r2d_on = false;
