@@ -3,7 +3,6 @@
 
 mod fmt;
 
-use cortex_m::prelude::_embedded_hal_blocking_delay_DelayMs;
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, signal::Signal};
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
@@ -48,8 +47,7 @@ async fn blink(led_pin: AnyPin)
 }
 
 #[embassy_executor::task]
-async fn pwm_out(mut pwm: SimplePwm<'static, TIM3>)
-{
+async fn pwm_out(mut pwm: SimplePwm<'static, TIM3>) {
     pwm.set_frequency(hz(50));
     // let max = pwm.get_max_duty();
     pwm.enable(Channel::Ch1);
@@ -81,8 +79,7 @@ async fn armed_tone(pin: AnyPin) {
  *****************************************************************************/
 
 #[embassy_executor::main]
-async fn main(spawner: Spawner)
-{
+async fn main(spawner: Spawner) {
 
     /* RCC configuration */
     let mut config = embassy_stm32::Config::default();
@@ -120,19 +117,29 @@ async fn main(spawner: Spawner)
     let mut p = embassy_stm32::init(config);
 
     /* Armed: 12V -> 3.3V via relay */
-    let armed_pin = Input::new(p.PC6, embassy_stm32::gpio::Pull::Down);
-    loop {
-        match armed_pin.get_level() {
+    let ssok = Input::new(p.PA8, embassy_stm32::gpio::Pull::Down);
+    let ready_to_drive = Input::new(p.PA9, embassy_stm32::gpio::Pull::Down);
+    let mut ssok_on = false;
+    let mut rtd_on = false;
+
+    while !(ssok_on && rtd_on) {
+        match ssok.get_level() {
             Level::High => {
-                info!("We see high");
-                armed_tone(p.PF0.into()).await;
-                info!("Going low");
-                break;
+                info!("ssok!");
+                ssok_on = true
             },
-            Level::Low => continue,
+            _ => {},
+        }
+        match ready_to_drive.get_level() {
+            Level::High =>  {
+                info!("rtd!");
+                rtd_on = true
+            },
+            _ => {},
         }
     }
 
+    armed_tone(p.PF0.into()).await;
 
     let ch1 = PwmPin::new_ch1(p.PA6, OutputType::PushPull);
     let pwm = SimplePwm::new(p.TIM3, Some(ch1), None, None, None, khz(10), Default::default());
@@ -145,8 +152,7 @@ async fn main(spawner: Spawner)
     spawner.spawn(pwm_out(pwm)).unwrap();
 
     /* Main Even Loop: Reading throttle position */
-    loop
-    {
+    loop {
 
         /* Read potentiometers */
         let pot1 = adc1.read(&mut p.PF11) as f32;
