@@ -117,29 +117,36 @@ async fn main(spawner: Spawner) {
     let mut p = embassy_stm32::init(config);
 
     /* Armed: 12V -> 3.3V via relay */
-    let ssok = Input::new(p.PA8, embassy_stm32::gpio::Pull::Down);
-    let ready_to_drive = Input::new(p.PA15, embassy_stm32::gpio::Pull::Down);
-    let mut ssok_on = false;
-    let mut rtd_on = false;
+    let ssok = Input::new(p.PA14, embassy_stm32::gpio::Pull::Down);
+    let r2d = Input::new(p.PA15, embassy_stm32::gpio::Pull::Down);
+    
 
-    while !(ssok_on && rtd_on) {
-        match ssok.get_level() {
-            Level::High => {
-                info!("ssok!");
-                ssok_on = true
-            },
-            _ => {},
-        }
-        match ready_to_drive.get_level() {
+
+    let mut ssok_on = false;
+    loop {
+        info!("SSOK level: {:?}", ssok.get_level());
+        info!("R2D level: {:?}", r2d.get_level());
+        // match ssok.get_level() {
+        //     Level::High => {
+        //         info!("ssok!");
+        //         ssok_on = true
+        //     },
+        //     Level::Low => Timer::after(Duration::from_millis(100)).await,
+        // }
+    }
+    
+    let mut r2d_on = false;
+    while !r2d_on {
+        match r2d.get_level() {
             Level::High =>  {
                 info!("rtd!");
-                rtd_on = true
+                r2d_on = true
             },
-            _ => {},
+            Level::Low => Timer::after(Duration::from_millis(100)).await,
         }
     }
 
-    armed_tone(p.PF0.into()).await;
+    armed_tone(p.PF3.into()).await;
 
     let ch1 = PwmPin::new_ch1(p.PA6, OutputType::PushPull);
     let pwm = SimplePwm::new(p.TIM3, Some(ch1), None, None, None, khz(10), Default::default());
@@ -163,7 +170,7 @@ async fn main(spawner: Spawner) {
         let pot2 = adc1.read(&mut p.PA0) as f32;
         let pot2_v = (pot2/65535.0)*3.3;  // ADC2 is 16-bit
         let pot2_per = (3.3-pot2_v)/3.3;
-        info!("pot2: {} or {}V or {}%\n", pot2, pot2_v, pot2_per);
+        //info!("pot2: {} or {}V or {}%\n", pot2, pot2_v, pot2_per);
 
         let avg = (pot1_per+pot2_per)/2.0;
 
