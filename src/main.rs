@@ -118,7 +118,7 @@ async fn main(spawner: Spawner) {
 
     /* Armed: 12V -> 3.3V via relay */
     let ssok = Input::new(p.PA8, embassy_stm32::gpio::Pull::Down);
-    let ready_to_drive = Input::new(p.PA9, embassy_stm32::gpio::Pull::Down);
+    let ready_to_drive = Input::new(p.PA15, embassy_stm32::gpio::Pull::Down);
     let mut ssok_on = false;
     let mut rtd_on = false;
 
