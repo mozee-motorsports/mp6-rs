@@ -21,22 +21,26 @@ use embassy_stm32::{
 use embassy_time::{Delay, Duration, Timer};
 use fmt::info;
 
-static PWM_DUTY_CYCLE: Signal<ThreadModeRawMutex, u32> = Signal::new();
+/// Current throttle position as percentage of max
+static THROTTLE_POS: Signal<ThreadModeRawMutex, f32> = Signal::new();
 
 /******************************************************************************
  * End stop values
  ******************************************************************************/
 
 // Potentiometer Parameters(16 bit min-max, 0 to 65535)
-const POT1_MIN: u32 = 0;
-const POT1_MAX: u32 = 65535;
+const POT1_MIN: f32 = 12000.0;
+const POT1_MAX: f32 = 57500.0;
 
-const POT2_MIN: u32 = 0;
-const POT2_MAX: u32 = 65535;
+const POT2_MIN: f32 = 13000.0;
+const POT2_MAX: f32 = 57000.0;
 
-// Servo Parameters (in percentage 0-100%)
-const SERVO_MIN: f32 = 100.0;
-const SERVO_MAX: f32 = 6000.0;
+const POT_THRESH: u32 = 500;
+
+// Servo Parameters
+const SERVO_MIN: f32 = 1000.0; // 1000/20000 = 5%
+const SERVO_MAX: f32 = 2000.0; // 2000/20000 = 10%
+
 
 /******************************************************************************
  * Async Tasks
@@ -60,15 +64,20 @@ async fn blink(led_pin: AnyPin)
 
 #[embassy_executor::task]
 async fn pwm_out(mut pwm: SimplePwm<'static, TIM3>) {
+
+    // Accodring to ryan: 50Hz servo frequency
+    // Duty cycle between 5% and 10%
     pwm.set_frequency(hz(50));
     pwm.enable(Channel::Ch1);
-    //pwm.enable(Channel::Ch1);
 
     loop {
         // waits for a signal on the PWM_DUTY_CYCLE mutex
-        let throttle_percentage = (PWM_DUTY_CYCLE.wait().await as f32)/(u16::max_value() as f32); // 0 to 1
-        let duty_cycle = (SERVO_MIN + (throttle_percentage * SERVO_MAX) as f32) as u16;
-        info!("setting duty cycle to {}", duty_cycle);
+        // duty_cycle = 1000: 5% duty cycle
+        // duty_cycle = 2000: 10% duty cycle
+
+        let throttle_pos = THROTTLE_POS.wait().await; // percentage
+        let duty_cycle = (SERVO_MIN + (throttle_pos * (SERVO_MAX-SERVO_MIN))) as u16;
+        info!("setting duty cycle to {} ({}%)", duty_cycle, (duty_cycle as f32)/(100.0) * 100.0);
         pwm.set_duty(Channel::Ch1, duty_cycle);
     }
 }
@@ -129,6 +138,7 @@ async fn main(spawner: Spawner) {
     Timer::after(Duration::from_millis(100)).await;
 
 
+    /* ssok needs to happen before anything else */
     let mut ssok_on = false;
     while !ssok_on {
         match ssok.get_level() {
@@ -140,6 +150,7 @@ async fn main(spawner: Spawner) {
         }
     }
     
+    /* ready to drive happens next */
     let mut r2d_on = false;
     while !r2d_on {
         match r2d.get_level() {
@@ -152,9 +163,11 @@ async fn main(spawner: Spawner) {
     }
 
     armed_tone(p.PF3.into()).await;
+    THROTTLE_POS.signal(0.0);
 
     let ch1 = PwmPin::new_ch1(p.PA6, OutputType::PushPull);
-    let pwm = SimplePwm::new(p.TIM3, Some(ch1), None, None, None, khz(10), Default::default());
+    let pwm = SimplePwm::new(p.TIM3, Some(ch1), None, None, None, khz(2), Default::default());
+    // info!("max duty cycle: {}", pwm.get_max_duty());
 
     let mut adc1 = Adc::new(p.ADC1, &mut Delay);
     adc1.set_sample_time(SampleTime::Cycles32_5);
@@ -167,32 +180,64 @@ async fn main(spawner: Spawner) {
     loop {
 
         /* Read potentiometers */
-        let mut pot1 = adc1.read(&mut p.PF11) as u32;
-        if pot1 < POT1_MIN {
-            pot1 = POT1_MIN;
-        } else if pot1 > POT1_MAX {
-            pot1 = POT1_MAX
+
+        /*
+            Assumption: Pot1 goes from ~0 to ~65535
+                                      off to  floor
+         */ 
+        // let mut pot1 = adc1.read(&mut p.PF11) as f32;
+        let pot1 = adc1.read(&mut p.PA0) as u32; // as u32
+        let pot2 = (POT2_MAX as u32 + POT2_MIN as u32) - (adc1.read(&mut p.PF11) as u32);
+        //let pot2 = adc1.read(&mut p.PF11) as u32;
+
+        let abs_diff = pot1.abs_diff(pot2);
+        info!("pot1, pot2 = ({}, {}), (diff: {})", pot1, pot2, abs_diff);
+
+       
+        if abs_diff > POT_THRESH {
+            info!("Error state, setting to minimum duty cycle (5%)");
+            THROTTLE_POS.signal(0.0);
+        } else {
+            let pot1_pos = (pot1 as f32 - POT1_MIN)/(POT1_MAX - POT1_MIN);
+            THROTTLE_POS.signal(pot1_pos);
         }
+        // if pot1 < POT1_MIN {
+        //     pot1 = POT1_MIN;
+        // } else if pot1 > POT1_MAX {
+        //     pot1 = POT1_MAX
+        // }
+        //let pot1_pos = (pot1 - POT1_MIN)/(POT1_MAX - POT1_MIN);
 
-        let mut pot2 = adc1.read(&mut p.PA0) as u32;
-        if pot2 < POT2_MIN {
-            pot2 = POT2_MIN;
-        } else if pot2 > POT2_MAX {
-            pot2 = POT2_MAX
-        }
+        /*
+            Assumption: Pot2 goes from ~0 to ~65535
+                                      off to floor
+         */
+        // let mut pot2 = adc1.read(&mut p.PA0) as f32;
+        // if pot2 < POT2_MIN {
+        //     pot2 = POT2_MIN;
+        // } else if pot2 > POT2_MAX {
+        //     pot2 = POT2_MAX
+        // }
+        // let pot2_pos = (pot2 - POT2_MIN)/(POT2_MAX - POT2_MIN);
 
-        let avg = (pot1 + pot2)/2;
+        // let avg_pos = (pot1_pos + pot2_pos)/2.0;
 
-        if percent_difference(pot1, pot2) > 0.10 {
-            /* this is an invalid state: report error and close throttle? */
-            PWM_DUTY_CYCLE.signal(0);            //info!("Error state!")
+        // info!("reading pot1: {}, pot2: {}", pot1, pot2);
+        // info!("pot1_pos: {}, pot2_pos: {}, avg_pos: {}", pot1_pos, pot2_pos, avg_pos);
+        
 
-        } 
-        else {
-            PWM_DUTY_CYCLE.signal(avg);
-        }
+        // // maybe measure deviation from average instead of absolute difference?
+        // if percent_difference(pot1, pot2) > 0.15 {
+        //     /* this is an invalid state: report error and close throttle? */
+        //     THROTTLE_POS.signal(0.0);  // min position is handled in PWM routine         
+        //     info!("Error state!")
+        // } 
+        // else {
+        //     info!("signaling pot1 = {}", pot1_pos);
+        //     THROTTLE_POS.signal(pot1_pos);
+        // }
 
-        Timer::after(Duration::from_millis(100)).await;
+        Timer::after(Duration::from_millis(1000)).await;
     }
 }
 
@@ -200,14 +245,13 @@ async fn main(spawner: Spawner) {
  * Function Definitions
  *****************************************************************************/
 
-pub fn percent_difference(x1: u32, x2: u32) -> f32 {
-    let diff = abs_diff(x1, x2) as f32;
-    let x1 = x1 as f32;
-    let x2 = x2 as f32;
-    diff / (x1 + x2) / 2.0
+pub fn percent_difference(x1: f32, x2: f32) -> f32 {
+    let x1 = x1 + 10.0;
+    let x2 = x2 + 10.0;
+    abs_diff(x1, x2) / (x1 + x2) / 2.0
 }
 
-pub fn abs_diff(x1: u32, x2: u32) -> u32 {
+pub fn abs_diff(x1: f32, x2: f32) -> f32 {
     if x1 > x2 {
         x1 - x2
     } else {
