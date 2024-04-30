@@ -27,13 +27,14 @@ static PWM_DUTY_CYCLE: Signal<ThreadModeRawMutex, f32> = Signal::new();
  * End stop values
  ******************************************************************************/
 
-// TODO
+// Potentiameter Parameters(in voltage 0-3.3v)
 const POT1_MIN: f32 = 0.0;
-const POT1_MAX: f32 = 100.0;
+const POT1_MAX: f32 = 3.3;
 
 const POT2_MIN: f32 = 0.0;
-const POT2_MAX: f32 = 100.0;
+const POT2_MAX: f32 = 3.3;
 
+// Servo Parameters (in percentage 0-100%)
 const SERVO_MIN: f32 = 0.0;
 const SERVO_MAX: f32 = 100.0;
 
@@ -175,13 +176,31 @@ async fn main(spawner: Spawner) {
 
         /* Read potentiometers */
         let pot1 = adc1.read(&mut p.PF11) as f32;
-        let pot1_v = (pot1/65535.0)*3.3;   // ADC1 is 16-bit
-        let pot1_per = pot1_v/3.3;
+        let pot1_v = (pot1/65535.0)*3.3;   // ADC1 is 16-bits
+        let pot1_per;
+        if pot1_v < POT1_MIN {
+            pot1_per = 0.0;
+        }
+        else if pot1_v > POT1_MAX {
+            pot1_per = 100.0;
+        }
+        else {
+            pot1_per = pot1_v/3.3;
+        }
         //info!("pot1: {} or {}V or {}%\n", pot1, pot1_v, pot1_per);
 
         let pot2 = adc1.read(&mut p.PA0) as f32;
         let pot2_v = (pot2/65535.0)*3.3;  // ADC2 is 16-bit
-        let pot2_per = (3.3-pot2_v)/3.3;
+        let pot2_per;
+        if pot2_v < POT2_MIN {
+            pot2_per = 0.0;
+        }
+        else if pot2_v > POT2_MAX {
+            pot2_per = 100.0;
+        }
+        else {
+            pot2_per = pot2_v/3.3;
+        }
         //info!("pot2: {} or {}V or {}%\n", pot2, pot2_v, pot2_per);
 
         let avg = (pot1_per+pot2_per)/2.0;
