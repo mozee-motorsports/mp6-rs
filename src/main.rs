@@ -21,8 +21,21 @@ use embassy_stm32::{
 use embassy_time::{Delay, Duration, Timer};
 use fmt::info;
 
-
 static PWM_DUTY_CYCLE: Signal<ThreadModeRawMutex, f32> = Signal::new();
+
+/******************************************************************************
+ * End stop values
+ ******************************************************************************/
+
+// TODO
+const POT1_MIN: f32 = 0.0;
+const POT1_MAX: f32 = 100.0;
+
+const POT2_MIN: f32 = 0.0;
+const POT2_MAX: f32 = 100.0;
+
+const SERVO_MIN: f32 = 0.0;
+const SERVO_MAX: f32 = 100.0;
 
 /******************************************************************************
  * Async Tasks
@@ -173,15 +186,18 @@ async fn main(spawner: Spawner) {
 
         let avg = (pot1_per+pot2_per)/2.0;
 
+        info!("\npot1: {}%\npot2: {}%\navg: {}%", pot1_per, pot2_per, avg);
+
         if percent_difference(pot1_per, pot2_per) > 0.10 {
-        /* this is an invalid state: report error and close throttle? */
-            //info!("Error state!")
+            /* this is an invalid state: report error and close throttle? */
+            PWM_DUTY_CYCLE.signal(0.0);            //info!("Error state!")
 
         } 
         else {
             PWM_DUTY_CYCLE.signal(avg);
          //   info!("\npot1: {}%\npot2: {}%\navg: {}%", pot1_per, pot2_per, avg);
              /* valid state, set throttle? */
+             PWM_DUTY_CYCLE.signal(avg);
         }
 
         Timer::after(Duration::from_millis(100)).await;
